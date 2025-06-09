@@ -3,6 +3,8 @@ import threading
 import customtkinter as ctk
 from tkinter import messagebox
 from Utils.utils import cargar_contactos, guardar_contactos
+import os
+import json
 
 class ClienteChat:
     def __init__(self, master, nombre, contrasena, ip):
@@ -42,6 +44,8 @@ class ClienteChat:
         self.entry_nuevo_contacto = ctk.CTkEntry(frame_agregar)
         self.entry_nuevo_contacto.pack(side="left")
 
+        ctk.CTkButton(frame_agregar, text="Eliminar", width=30, command=self.eliminar_contacto).pack(side="left", padx=2)
+
         ctk.CTkButton(frame_agregar, text="+", width=30, command=self.agregar_contacto).pack(side="left", padx=2)
 
         # Panel derecho (chat)
@@ -65,7 +69,30 @@ class ClienteChat:
 
     def seleccionar_contacto(self, nombre):
         self.contacto_destino = nombre
+        self.text_chat.configure(state="normal")
+        self.text_chat.delete("1.0", "end")
+        self.cargar_historial(nombre)
+        self.text_chat.configure(state="disabled")
         self.mostrar_en_chat(f"[Sistema] Hablando con {nombre}")
+
+    def eliminar_contacto(self):
+        contacto = self.contacto_destino
+        if not contacto:
+            messagebox.showwarning("Error", "Selecciona un contacto para eliminar.")
+            return
+        if contacto not in self.contactos["equipo"]:
+            messagebox.showinfo("No existe", f"El contacto '{contacto}' no está en la lista.")
+            return
+        self.contactos["equipo"].remove(contacto)
+        guardar_contactos(self.contactos)
+        self.lista_contactos.destroy()
+        self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
+        self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
+        for contacto in self.contactos["equipo"]:
+            self.agregar_boton_contacto(contacto)
+        self.mostrar_en_chat(f"Contacto '{contacto}' eliminado.")
+        messagebox.showinfo("Eliminado", f"Contacto '{contacto}' eliminado.")
+
 
     def agregar_contacto(self):
         nuevo = self.entry_nuevo_contacto.get().strip()
@@ -104,7 +131,7 @@ class ClienteChat:
                     threading.Thread(target=self.recibir_mensajes, daemon=True).start()
                     self.master.after(0, lambda: self.mostrar_en_chat("Conectado al servidor."))
             except Exception as e:
-                self.master.after(0, lambda: messagebox.showerror("Error", f"No se pudo conectar: {e}"))
+                self.master.after(0, lambda err=e: messagebox.showerror("Error", f"No se pudo conectar: {err}"))
 
         threading.Thread(target=conectar_thread, daemon=True).start()
 
@@ -113,6 +140,7 @@ class ClienteChat:
             try:
                 mensaje = self.cliente.recv(1024).decode()
                 self.mostrar_en_chat(mensaje)
+                self.guardar_en_historial(mensaje)
             except Exception as e:
                 print(f"Error en recibir_mensajes: {e}")
                 self.conectado = False
@@ -128,6 +156,7 @@ class ClienteChat:
             return
         self.cliente.sendall(f"{self.contacto_destino}::{mensaje}".encode())
         self.mostrar_en_chat(f"Tú -> {self.contacto_destino}: {mensaje}")
+        self.guardar_en_historial(f"Tú -> {self.contacto_destino}: {mensaje}")
         self.entry_mensaje.delete(0, "end")
 
     def mostrar_en_chat(self, mensaje):
@@ -135,6 +164,33 @@ class ClienteChat:
         self.text_chat.insert("end", mensaje + "\n")
         self.text_chat.configure(state="disabled")
         self.text_chat.see("end")
+
+    def guardar_en_historial(self, mensaje):
+        if not self.contacto_destino:
+            return
+        archivo = f"historial_{self.contacto_destino}.json"
+        try:
+            if os.path.exists(archivo):
+                with open(archivo, "r") as f:
+                    historial = json.load(f)
+            else:
+                historial = []
+            historial.append(mensaje)
+            with open(archivo, "w") as f:
+                json.dump(historial, f, indent=4)
+        except Exception as e:
+            print(f"Error guardando historial: {e}")
+
+    def cargar_historial(self, nombre):
+        archivo = f"historial_{nombre}.json"
+        if os.path.exists(archivo):
+            try:
+                with open(archivo, "r") as f:
+                    historial = json.load(f)
+                    for linea in historial:
+                        self.text_chat.insert("end", linea + "\n")
+            except Exception as e:
+                print(f"Error cargando historial: {e}")
 
 def registrar_usuario(usuario, contrasena):
     try:
@@ -170,4 +226,3 @@ class IPDialog(ctk.CTkToplevel):
         if ip:
             self.on_ip_entered(ip)
             self.destroy()
-
