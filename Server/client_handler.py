@@ -1,44 +1,75 @@
-# Este es el handler para el cliente, solo es una manera mas fancy de decir que es el servidor como tal xd
-# este se encargara de las conexiones, media y mensajes enviados, con protocolos para cada usuario individual#
-
-# Librerias a importar#
 import socket
 import threading
+import json
+import os
 
-# Esto es para almacenar los clientes conectados
 clientes = {}
 
+def cargar_usuarios():
+    if not os.path.exists("usuarios.json"):
+        with open("usuarios.json", "w") as f:
+            json.dump({}, f, indent=4)
+    with open("usuarios.json", "r") as f:
+        return json.load(f)
 
-# Funcion prinicipal para manejar a los clientes conectados
+usuarios = cargar_usuarios()
+
 def manejar_cliente(conn, addr):
-    nombre = conn.recv(1024).decode()
-    clientes[nombre] = conn
-    print(f"{nombre} conectado desde {addr}")
-
-    # Avisos a la terminal del servidor, conectados, desconectados y mensajes enviados (este ultimo solo para el cliente destinatario)
-
-    while True:
-        try:
-            data = conn.recv(1024).decode()
-            destino, mensaje = data.split("::")
-            if destino in clientes:
-                clientes[destino].send(f"{nombre} dice: {mensaje}".encode())
-        except:
-            print(f"{nombre} se desconectó.")
-            del clientes[nombre]
+    try:
+        datos = conn.recv(1024).decode()
+        if datos.startswith("REGISTER::"):
+            _, usuario, contrasena = datos.split("::")
+            if usuario in usuarios:
+                conn.send("REGISTER_EXISTS".encode())
+            else:
+                usuarios[usuario] = contrasena
+                with open("usuarios.json", "w") as f:
+                    json.dump(usuarios, f, indent=4)
+                conn.send("REGISTER_OK".encode())
             conn.close()
-            break
+            return
 
-# Configuracion del servidor, abrir un socket y escuchar conexiones
+        usuario, contrasena = datos.split("::")
+        if usuario not in usuarios or usuarios[usuario] != contrasena:
+            conn.send("LOGIN_FAIL".encode())
+            conn.close()
+            return
 
+        clientes[usuario] = conn
+        conn.send("READY".encode())  
+        print(f"[+] {usuario} conectado desde {addr}")
+
+        while True:
+            try:
+                data = conn.recv(1024).decode()
+
+                if "::" not in data:
+                    print(f"[!] Mensaje malformado de {usuario}: {data}")
+                    continue
+
+                destino, mensaje = data.split("::", 1)
+
+                if destino in clientes:
+                    clientes[destino].send(f"{usuario} dice: {mensaje}".encode())
+                else:
+                    conn.send(f"Error: {destino} no está conectado.".encode())
+
+            except Exception as e:
+                print(f"[x] {usuario} se desconectó. Error interno: {e}")
+                break
+    finally:
+        if usuario in clientes:
+            del clientes[usuario]
+        conn.close()
+        print(f"[-] {usuario} desconectado.")
+
+# Configuración del servidor
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("0.0.0.0", 8080))
 server.listen()
 
-# Mensaje de aviso de inicio del server
-print("Servidor corriendo...")
+print("Servidor corriendo en el puerto 8080...")
 
-# Aceptar conexiones y crear un thread para cada uno de los clientes
 while True:
     conn, addr = server.accept()
-    threading.Thread(target=manejar_cliente, args=(conn, addr)).start()
+    threading.Thread(target=manejar_cliente, args=(conn, addr), daemon=True).start()
