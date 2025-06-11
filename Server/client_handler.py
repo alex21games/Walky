@@ -1,96 +1,92 @@
 import socket
 import threading
-import json
+import sqlite3
 import os
 
-clientes = {}    # usuario: conn
-pendientes = {}  # usuario: [mensajes]
+DB_FILE = "DataBase/chat_data.db"
 
-def cargar_usuarios():
-    if not os.path.exists("usuarios.json"):
-        with open("usuarios.json", "w") as f:
-            json.dump({}, f, indent=4)
-    with open("usuarios.json", "r") as f:
-        return json.load(f)
+if not os.path.exists(DB_FILE):
+    print(f"Error: La base de datos '{DB_FILE}' no existe. Asegúrate de que se haya creado correctamente.")
+    exit(1)
 
-usuarios = cargar_usuarios()
 
-def manejar_cliente(conn, addr):
+clientes = {}
+
+
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+cursor = conn.cursor()
+
+
+def obtener_usuario_id(nombre):
+    cursor.execute("SELECT id FROM usuarios WHERE nombre = ?", (nombre,))
+    resultado = cursor.fetchone()
+    return resultado[0] if resultado else None
+
+
+def manejar_cliente(conn_cliente, addr):
     try:
-        datos = conn.recv(1024).decode()
-        
-        # Registro de usuario
+        datos = conn_cliente.recv(1024).decode()
+
         if datos.startswith("REGISTER::"):
             _, usuario, contrasena = datos.split("::")
-            if usuario in usuarios:
-                conn.send("REGISTER_EXISTS".encode())
+            cursor.execute("SELECT * FROM usuarios WHERE nombre = ?", (usuario,))
+            if cursor.fetchone():
+                conn_cliente.send("REGISTER_EXISTS".encode())
             else:
-                usuarios[usuario] = contrasena
-                with open("usuarios.json", "w") as f:
-                    json.dump(usuarios, f, indent=4)
-                conn.send("REGISTER_OK".encode())
-            conn.close()
+                cursor.execute("INSERT INTO usuarios (nombre, contrasena) VALUES (?, ?)", (usuario, contrasena))
+                conn.commit()
+                conn_cliente.send("REGISTER_OK".encode())
+            conn_cliente.close()
             return
 
-        # Login
         usuario, contrasena = datos.split("::")
-        if usuario not in usuarios or usuarios[usuario] != contrasena:
-            conn.send("LOGIN_FAIL".encode())
-            conn.close()
+        cursor.execute("SELECT * FROM usuarios WHERE nombre = ? AND contrasena = ?", (usuario, contrasena))
+        if not cursor.fetchone():
+            conn_cliente.send("LOGIN_FAIL".encode())
+            conn_cliente.close()
             return
 
-        # Conexión exitosa
-        clientes[usuario] = conn
-        conn.send("READY".encode())
+        clientes[usuario] = conn_cliente
+        conn_cliente.send("READY".encode())
         print(f"[+] {usuario} conectado desde {addr}")
 
-        # Enviar mensajes pendientes si hay
-        if usuario in pendientes:
-            for mensaje in pendientes[usuario]:
-                try:
-                    conn.send(mensaje.encode())
-                except:
-                    print(f"[!] No se pudo enviar mensaje pendiente a {usuario}")
-            pendientes[usuario] = []
+        cursor.execute("SELECT emisor, mensaje FROM mensajes WHERE receptor = ? ORDER BY timestamp ASC", (usuario,))
+        for emisor, mensaje in cursor.fetchall():
+            try:
+                conn_cliente.send(f"{emisor} dice: {mensaje}".encode())
+            except:
+                break
 
-        # Escuchar nuevos mensajes
         while True:
             try:
-                data = conn.recv(1024).decode()
-
+                data = conn_cliente.recv(1024).decode()
                 if "::" not in data:
-                    print(f"[!] Mensaje malformado de {usuario}: {data}")
                     continue
 
                 destino, mensaje = data.split("::", 1)
-                mensaje_formateado = f"{usuario} dice: {mensaje}"
+
+                # Guardar mensaje en base de datos
+                cursor.execute("INSERT INTO mensajes (emisor, receptor, mensaje) VALUES (?, ?, ?)",
+                               (usuario, destino, mensaje))
+                conn.commit()
 
                 if destino in clientes:
-                    clientes[destino].send(mensaje_formateado.encode())
-                else:
-                    print(f"[~] {destino} no está conectado. Guardando mensaje.")
-                    if destino not in pendientes:
-                        pendientes[destino] = []
-                    pendientes[destino].append(mensaje_formateado)
-
+                    clientes[destino].send(f"{usuario} dice: {mensaje}".encode())
             except Exception as e:
-                print(f"[x] {usuario} se desconectó. Error interno: {e}")
+                print(f"[x] {usuario} se desconectó: {e}")
                 break
-
     finally:
         if usuario in clientes:
             del clientes[usuario]
-        conn.close()
-        print(f"[-] {usuario} desconectado.")
+        conn_cliente.close()
+        print(f"[-] {usuario} desconectado")
 
-# Configuración del servidor
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("0.0.0.0", 8080))
 server.listen()
 
-print("Servidor corriendo en el puerto 8080...")
+print("Servidor corriendo en puerto 8080...")
 
 while True:
-    conn, addr = server.accept()
-    threading.Thread(target=manejar_cliente, args=(conn, addr), daemon=True).start()
-
+    conn_cliente, addr = server.accept()
+    threading.Thread(target=manejar_cliente, args=(conn_cliente, addr), daemon=True).start()

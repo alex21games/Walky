@@ -2,7 +2,6 @@ import socket
 import threading
 import customtkinter as ctk
 from tkinter import messagebox
-from Utils.utils import cargar_contactos, guardar_contactos
 import os
 import json
 
@@ -18,7 +17,7 @@ class ClienteChat:
         self.cliente = None
         self.conectado = False
 
-        self.contactos = cargar_contactos()
+        self.contactos = []
         self.contacto_destino = None
 
         self.construir_interfaz()
@@ -35,18 +34,14 @@ class ClienteChat:
         self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
         self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
 
-        for contacto in self.contactos["equipo"]:
-            self.agregar_boton_contacto(contacto)
-
         frame_agregar = ctk.CTkFrame(self.frame_izquierdo)
         frame_agregar.pack(pady=5)
 
         self.entry_nuevo_contacto = ctk.CTkEntry(frame_agregar)
         self.entry_nuevo_contacto.pack(side="left")
 
-        ctk.CTkButton(frame_agregar, text="Eliminar", width=30, command=self.eliminar_contacto).pack(side="left", padx=2)
-
         ctk.CTkButton(frame_agregar, text="+", width=30, command=self.agregar_contacto).pack(side="left", padx=2)
+        ctk.CTkButton(frame_agregar, text="Eliminar", width=30, command=self.eliminar_contacto).pack(side="left", padx=2)
 
         # Panel derecho (chat)
         self.frame_derecho = ctk.CTkFrame(frame_main)
@@ -75,38 +70,45 @@ class ClienteChat:
         self.text_chat.configure(state="disabled")
         self.mostrar_en_chat(f"[Sistema] Hablando con {nombre}")
 
-    def eliminar_contacto(self):
-        contacto = self.contacto_destino
-        if not contacto:
-            messagebox.showwarning("Error", "Selecciona un contacto para eliminar.")
-            return
-        if contacto not in self.contactos["equipo"]:
-            messagebox.showinfo("No existe", f"El contacto '{contacto}' no está en la lista.")
-            return
-        self.contactos["equipo"].remove(contacto)
-        guardar_contactos(self.contactos)
-        self.lista_contactos.destroy()
-        self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
-        self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
-        for contacto in self.contactos["equipo"]:
-            self.agregar_boton_contacto(contacto)
-        self.mostrar_en_chat(f"Contacto '{contacto}' eliminado.")
-        messagebox.showinfo("Eliminado", f"Contacto '{contacto}' eliminado.")
-
-
     def agregar_contacto(self):
         nuevo = self.entry_nuevo_contacto.get().strip()
         if not nuevo:
             messagebox.showwarning("Aviso", "Escribe un nombre.")
             return
-        if nuevo in self.contactos["equipo"]:
+        if nuevo in self.contactos:
             messagebox.showinfo("Ya existe", f"El contacto '{nuevo}' ya está en la lista.")
             return
-        self.contactos["equipo"].append(nuevo)
-        guardar_contactos(self.contactos)
-        self.agregar_boton_contacto(nuevo)
-        self.entry_nuevo_contacto.delete(0, "end")
-        messagebox.showinfo("Agregado", f"Contacto '{nuevo}' añadido.")
+
+        try:
+            self.cliente.sendall(f"ADD_CONTACTO::{nuevo}".encode())
+            self.contactos.append(nuevo)
+            self.agregar_boton_contacto(nuevo)
+            self.entry_nuevo_contacto.delete(0, "end")
+            messagebox.showinfo("Agregado", f"Contacto '{nuevo}' añadido.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo agregar contacto: {e}")
+
+    def eliminar_contacto(self):
+        contacto = self.contacto_destino
+        if not contacto:
+            messagebox.showwarning("Error", "Selecciona un contacto para eliminar.")
+            return
+        if contacto not in self.contactos:
+            messagebox.showinfo("No existe", f"El contacto '{contacto}' no está en la lista.")
+            return
+
+        try:
+            self.cliente.sendall(f"DEL_CONTACTO::{contacto}".encode())
+            self.contactos.remove(contacto)
+            self.lista_contactos.destroy()
+            self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
+            self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
+            for contacto in self.contactos:
+                self.agregar_boton_contacto(contacto)
+            self.mostrar_en_chat(f"Contacto '{contacto}' eliminado.")
+            messagebox.showinfo("Eliminado", f"Contacto '{contacto}' eliminado.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo eliminar contacto: {e}")
 
     def conectar(self):
         if not self.nombre or not self.contrasena:
@@ -139,13 +141,26 @@ class ClienteChat:
         while self.conectado:
             try:
                 mensaje = self.cliente.recv(1024).decode()
+
+                if mensaje.startswith("[Contactos]::"):
+                    _, lista = mensaje.split("::")
+                    self.contactos = lista.split(",") if lista else []
+                    self.master.after(0, self.refrescar_contactos)
+                    continue
+
                 self.mostrar_en_chat(mensaje)
-                self.guardar_en_historial(mensaje)
             except Exception as e:
                 print(f"Error en recibir_mensajes: {e}")
                 self.conectado = False
                 self.mostrar_en_chat("Desconectado del servidor.")
                 break
+
+    def refrescar_contactos(self):
+        self.lista_contactos.destroy()
+        self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
+        self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
+        for contacto in self.contactos:
+            self.agregar_boton_contacto(contacto)
 
     def enviar_mensaje(self):
         mensaje = self.entry_mensaje.get()
@@ -156,7 +171,7 @@ class ClienteChat:
             return
         self.cliente.sendall(f"{self.contacto_destino}::{mensaje}".encode())
         self.mostrar_en_chat(f"Tú -> {self.contacto_destino}: {mensaje}")
-        self.guardar_en_historial(f"Tú -> {self.contacto_destino}: {mensaje}")
+        # self.guardar_en_historial(f"Tú -> {self.contacto_destino}: {mensaje}")
         self.entry_mensaje.delete(0, "end")
 
     def mostrar_en_chat(self, mensaje):
@@ -165,24 +180,8 @@ class ClienteChat:
         self.text_chat.configure(state="disabled")
         self.text_chat.see("end")
 
-    def guardar_en_historial(self, mensaje):
-        if not self.contacto_destino:
-            return
-        archivo = f"historial_{self.contacto_destino}.json"
-        try:
-            if os.path.exists(archivo):
-                with open(archivo, "r") as f:
-                    historial = json.load(f)
-            else:
-                historial = []
-            historial.append(mensaje)
-            with open(archivo, "w") as f:
-                json.dump(historial, f, indent=4)
-        except Exception as e:
-            print(f"Error guardando historial: {e}")
-
     def cargar_historial(self, nombre):
-        archivo = f"historial_{nombre}.json"
+        archivo = f"historial_{self.nombre}_{nombre}.json"
         if os.path.exists(archivo):
             try:
                 with open(archivo, "r") as f:
@@ -191,6 +190,7 @@ class ClienteChat:
                         self.text_chat.insert("end", linea + "\n")
             except Exception as e:
                 print(f"Error cargando historial: {e}")
+
 
 def registrar_usuario(usuario, contrasena):
     try:
@@ -209,6 +209,7 @@ def registrar_usuario(usuario, contrasena):
     except Exception as e:
         messagebox.showerror("Registro", f"Error de conexión: {e}")
 
+
 class IPDialog(ctk.CTkToplevel):
     def __init__(self, master, on_ip_entered):
         super().__init__(master)
@@ -220,6 +221,8 @@ class IPDialog(ctk.CTkToplevel):
         self.entry_ip = ctk.CTkEntry(self)
         self.entry_ip.pack(pady=5)
         ctk.CTkButton(self, text="Conectar", command=self.enviar_ip).pack(pady=10)
+        self.entry_ip.focus_set()
+        self.bind("<Return>", lambda event: self.enviar_ip())
 
     def enviar_ip(self):
         ip = self.entry_ip.get().strip()
