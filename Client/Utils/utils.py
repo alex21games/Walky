@@ -1,3 +1,7 @@
+# INUTILIZADO O OBSOLETO
+
+
+
 import json
 
 # Utilidades para que no este tan saturado # el codigo principal, aqui se cargan y guardan los contactos en un archivo yeizon

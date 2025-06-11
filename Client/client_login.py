@@ -1,7 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
 import os
-import json
 
 class LoginVentana(ctk.CTkToplevel):
     def __init__(self, master, on_login, on_register):
@@ -42,5 +41,5 @@ class LoginVentana(ctk.CTkToplevel):
         if not usuario or not contrasena:
             messagebox.showwarning("Campos vacíos", "Debes ingresar usuario y contraseña.")
             return
-
+        
         self.on_register(usuario, contrasena, self)

@@ -8,7 +8,7 @@ import json
 class ClienteChat:
     def __init__(self, master, nombre, contrasena, ip):
         self.master = master
-        self.master.title("Walky - Alpha 1.0.0")
+        self.master.title("Walky - Alpha 1.0.1")
         self.master.geometry("1200x800")
 
         self.nombre = nombre
@@ -80,11 +80,9 @@ class ClienteChat:
             return
 
         try:
-            self.cliente.sendall(f"ADD_CONTACTO::{nuevo}".encode())
-            self.contactos.append(nuevo)
-            self.agregar_boton_contacto(nuevo)
+            self.cliente.sendall(f"ADD_CONTACTO::{nuevo}\n".encode())
             self.entry_nuevo_contacto.delete(0, "end")
-            messagebox.showinfo("Agregado", f"Contacto '{nuevo}' añadido.")
+            messagebox.showinfo("Solicitud enviada", f"Solicitud enviada a '{nuevo}'.")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo agregar contacto: {e}")
 
@@ -131,7 +129,6 @@ class ClienteChat:
                 elif respuesta == "READY":
                     self.conectado = True
                     threading.Thread(target=self.recibir_mensajes, daemon=True).start()
-                    self.master.after(0, lambda: self.mostrar_en_chat("Conectado al servidor."))
             except Exception as e:
                 self.master.after(0, lambda err=e: messagebox.showerror("Error", f"No se pudo conectar: {err}"))
 
@@ -140,20 +137,56 @@ class ClienteChat:
     def recibir_mensajes(self):
         while self.conectado:
             try:
-                mensaje = self.cliente.recv(1024).decode()
+                datos = self.cliente.recv(1024).decode()
+                for mensaje in datos.splitlines():
+                    if mensaje.startswith("[Contactos]::"):
+                        _, lista = mensaje.split("::", 1)
+                        self.contactos = lista.split(",") if lista else []
+                        self.master.after(0, self.refrescar_contactos)
 
-                if mensaje.startswith("[Contactos]::"):
-                    _, lista = mensaje.split("::")
-                    self.contactos = lista.split(",") if lista else []
-                    self.master.after(0, self.refrescar_contactos)
-                    continue
+                    elif mensaje.startswith("[Solicitud]::"):
+                        _, nombre = mensaje.split("::", 1)
+                        self.master.after(0, lambda: self.mostrar_solicitud(nombre))
 
-                self.mostrar_en_chat(mensaje)
+                    elif mensaje.startswith("[ContactoAceptado]::"):
+                        _, nuevo = mensaje.split("::", 1)
+                        if nuevo not in self.contactos:
+                            self.contactos.append(nuevo)
+                            self.master.after(0, self.refrescar_contactos)
+                            self.mostrar_en_chat(f"Has aceptado a {nuevo} como contacto.")
+
+                    elif mensaje.startswith("[Error]::"):
+                        _, error_msg = mensaje.split("::", 1)
+                        self.master.after(0, lambda: messagebox.showerror("Error del servidor", error_msg))
+
+                    else:
+                        self.mostrar_en_chat(mensaje)
             except Exception as e:
                 print(f"Error en recibir_mensajes: {e}")
                 self.conectado = False
                 self.mostrar_en_chat("Desconectado del servidor.")
                 break
+
+
+    def mostrar_solicitud(self, nombre):
+        ventana = ctk.CTkToplevel(self.master)
+        ventana.title("Solicitud de contacto")
+        ventana.geometry("300x150")
+
+        ctk.CTkLabel(ventana, text=f"{nombre} quiere agregarte.").pack(pady=10)
+    
+        def aceptar():
+            self.cliente.sendall(f"ACEPTAR::{nombre}\n".encode())
+            # self.contactos.append(nombre)  # <-- Quita esto
+            # self.refrescar_contactos()     # <-- Quita esto
+            ventana.destroy()
+
+        def rechazar():
+            # Aquí podrías implementar RECHAZAR::<nombre> si lo deseas
+            ventana.destroy()
+
+        ctk.CTkButton(ventana, text="Aceptar", command=aceptar).pack(pady=5)
+        ctk.CTkButton(ventana, text="Rechazar", command=rechazar).pack(pady=5)
 
     def refrescar_contactos(self):
         self.lista_contactos.destroy()
@@ -169,7 +202,7 @@ class ClienteChat:
             return
         if not mensaje.strip():
             return
-        self.cliente.sendall(f"{self.contacto_destino}::{mensaje}".encode())
+        self.cliente.sendall(f"{self.contacto_destino}::{mensaje}\n".encode())
         self.mostrar_en_chat(f"Tú -> {self.contacto_destino}: {mensaje}")
         # self.guardar_en_historial(f"Tú -> {self.contacto_destino}: {mensaje}")
         self.entry_mensaje.delete(0, "end")
@@ -191,11 +224,10 @@ class ClienteChat:
             except Exception as e:
                 print(f"Error cargando historial: {e}")
 
-
 def registrar_usuario(usuario, contrasena):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("192.168.217.131", 8080))  # Cambia IP si es necesario
+        s.connect(("localhost", 8080)) 
         s.send(f"REGISTER::{usuario}::{contrasena}".encode())
         respuesta = s.recv(1024).decode()
         s.close()
@@ -208,6 +240,7 @@ def registrar_usuario(usuario, contrasena):
             messagebox.showerror("Registro", "Error al registrar usuario.")
     except Exception as e:
         messagebox.showerror("Registro", f"Error de conexión: {e}")
+    return False
 
 
 class IPDialog(ctk.CTkToplevel):

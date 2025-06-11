@@ -1,13 +1,14 @@
 import sqlite3
 import os
 
-DB_FILE = "chat_data.db"
+# Asegúrate de que exista la carpeta DataBase
+os.makedirs("DataBase", exist_ok=True)
+DB_FILE = "DataBase/chat_data.db"
 
-# Crear conexión
 conn = sqlite3.connect(DB_FILE)
 cursor = conn.cursor()
 
-# Crear tabla de usuarios
+# Tabla de usuarios
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,7 +17,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
 )
 ''')
 
-# Crear tabla de contactos por usuario
+# Tabla de contactos
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS contactos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS contactos (
 )
 ''')
 
-# Crear tabla de mensajes
+# Tabla de mensajes
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS mensajes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +38,18 @@ CREATE TABLE IF NOT EXISTS mensajes (
 )
 ''')
 
+# Tabla de solicitudes con timestamp para cooldown
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS solicitudes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    emisor TEXT NOT NULL,
+    receptor TEXT NOT NULL,
+    estado TEXT DEFAULT 'pendiente',
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
 conn.commit()
 conn.close()
 
-print("Base de datos SQLite inicializada correctamente.")
+print("Base de datos inicializada correctamente.")
