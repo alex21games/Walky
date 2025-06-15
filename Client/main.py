@@ -1,3 +1,5 @@
+# Este es el archivo main, inicia el cliente y las ventanas (pa que sea mas modular)
+
 import customtkinter as ctk
 from client_main import ClienteChat, IPDialog, registrar_usuario
 from client_login import LoginVentana
@@ -8,26 +10,26 @@ ctk.set_default_color_theme("blue")
 root = ctk.CTk()
 root.withdraw()
 
-# Función que se llama cuando el login es exitoso
+# Cuanto el usuario inicia sesion se destruye la ventana para el login y se inicia la ventana del chat
 def iniciar_chat(usuario, contrasena, ip):
     root.deiconify()
     for widget in root.winfo_children():
         widget.destroy()
     ClienteChat(root, usuario, contrasena, ip)
 
-# Función que se llama al presionar "Iniciar sesión"
+# Al presionar iniciar sesion pasa a la ventana de la ip
 def on_login(usuario, contrasena, login_window):
     def on_ip(ip):
         login_window.destroy()
         iniciar_chat(usuario, contrasena, ip)
     IPDialog(root, on_ip)
 
-# Función que se llama al presionar "Registrarse"
+# Si el usuario no tenia cuenta esta funcion es para registrarlo
 def on_register(usuario, contrasena, login_window):
     registrar_usuario(usuario, contrasena)
 
-# Lanzar ventana de login
+# Lanzar la ventana login
 LoginVentana(root, on_login, on_register)
 
-# Iniciar bucle de interfaz
+# bucle principal
 root.mainloop()
