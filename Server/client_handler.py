@@ -8,7 +8,7 @@ import datetime
 DB_FILE = "DataBase/chat_data.db"
 
 if not os.path.exists(DB_FILE):
-    print(f"Error: La base de datos '{DB_FILE}' no existe. Asegúrate de que se haya creado correctamente.")
+    print(f"Error: La base de datos '{DB_FILE}' no existe.")
     exit(1)
 
 clientes = {}
@@ -35,6 +35,7 @@ def manejar_cliente(conn_cliente, addr):
     try:
         datos = conn_cliente.recv(1024).decode()
 
+        # Registro
         if datos.startswith("REGISTER::"):
             _, usuario, contrasena = datos.split("::")
             cursor.execute("SELECT * FROM usuarios WHERE nombre = ?", (usuario,))
@@ -47,6 +48,7 @@ def manejar_cliente(conn_cliente, addr):
             conn_cliente.close()
             return
 
+        # Login
         usuario, contrasena = datos.split("::")
         cursor.execute("SELECT * FROM usuarios WHERE nombre = ? AND contrasena = ?", (usuario, contrasena))
         if not cursor.fetchone():
@@ -58,36 +60,45 @@ def manejar_cliente(conn_cliente, addr):
         conn_cliente.send("READY".encode())
         print(f"[+] {usuario} conectado desde {addr}")
 
-        cursor.execute("SELECT emisor, receptor, mensaje FROM mensajes WHERE receptor = ? OR emisor = ? ORDER BY timestamp ASC", (usuario, usuario))
+        # Enviar historial
+        cursor.execute("""
+            SELECT emisor, receptor, mensaje FROM mensajes 
+            WHERE receptor = ? OR emisor = ?
+            ORDER BY timestamp ASC
+        """, (usuario, usuario))
         for emisor, receptor, mensaje in cursor.fetchall():
-            destino = receptor if emisor == usuario else emisor
-            conn_cliente.send(f"{emisor} dice: {mensaje}\n".encode())
+            contacto = receptor if emisor == usuario else emisor
+            if contacto != usuario:
+                linea = f"{emisor} dice: {mensaje}"
+                conn_cliente.send(f"[Historial]::{contacto}|{linea}\n".encode())
 
+        # Contactos
         contactos = obtener_contactos(usuario)
         if contactos:
             conn_cliente.send(f"[Contactos]::{','.join(contactos)}\n".encode())
 
+        # Solicitudes pendientes
         cursor.execute("SELECT emisor FROM solicitudes WHERE receptor = ? AND estado = 'pendiente'", (usuario,))
         for fila in cursor.fetchall():
             emisor = fila[0]
             conn_cliente.send(f"[Solicitud]::{emisor}\n".encode())
 
+        # Escuchar al cliente
         while True:
             try:
-                data = conn_cliente.recv(1024).decode()
-                data = data.strip()
+                data = conn_cliente.recv(1024).decode().strip()
 
                 if "::" not in data:
                     continue
 
+                # Añadir contacto
                 if data.startswith("ADD_CONTACTO::"):
                     _, nuevo_contacto = data.split("::")
                     nuevo_contacto = nuevo_contacto.strip()
-                    print(f"Solicitud recibida: {usuario} quiere agregar a {nuevo_contacto}")
-                    
+                    print(f"{usuario} quiere agregar a {nuevo_contacto}")
+
                     cursor.execute("SELECT * FROM usuarios WHERE nombre = ?", (nuevo_contacto,))
                     if not cursor.fetchone():
-                        print(f"El usuario {nuevo_contacto} no existe.")
                         conn_cliente.send(f"[Error]::El usuario '{nuevo_contacto}' no existe.\n".encode())
                         continue
 
@@ -99,27 +110,22 @@ def manejar_cliente(conn_cliente, addr):
                         ts, estado = solicitud
                         ts_dt = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
                         diferencia = (now - ts_dt).total_seconds()
-
                         if estado == "pendiente" and diferencia < 10:
-                            conn_cliente.send(f"[Error]::Ya enviaste una solicitud recientemente. Intenta en {int(10 - diferencia)} segundos.\n".encode())
-                            print(f"Solicitud reciente bloqueada. Espera {int(10 - diferencia)}s.")
+                            conn_cliente.send(f"[Error]::Espera {int(10 - diferencia)} segundos para volver a enviar.\n".encode())
                             continue
                         else:
                             cursor.execute("UPDATE solicitudes SET timestamp = ?, estado = 'pendiente' WHERE emisor = ? AND receptor = ?", 
                                            (now.strftime("%Y-%m-%d %H:%M:%S"), usuario, nuevo_contacto))
-                            conn.commit()
                     else:
                         cursor.execute("INSERT INTO solicitudes (emisor, receptor, timestamp) VALUES (?, ?, ?)", 
                                        (usuario, nuevo_contacto, now.strftime("%Y-%m-%d %H:%M:%S")))
-                        conn.commit()
+                    conn.commit()
 
-                    print(f"Solicitud (re)enviada de {usuario} a {nuevo_contacto}.")
                     if nuevo_contacto in clientes:
                         clientes[nuevo_contacto].send(f"[Solicitud]::{usuario}\n".encode())
-                    else:
-                        print(f"{nuevo_contacto} no está conectado.")
                     continue
 
+                # Aceptar contacto
                 elif data.startswith("ACEPTAR::"):
                     _, aceptado = data.split("::")
                     cursor.execute("UPDATE solicitudes SET estado = 'aceptado' WHERE emisor = ? AND receptor = ?", (aceptado, usuario))
@@ -132,6 +138,7 @@ def manejar_cliente(conn_cliente, addr):
                         clientes[aceptado].send(f"[ContactoAceptado]::{usuario}\n".encode())
                     continue
 
+                # Eliminar contacto
                 elif data.startswith("DEL_CONTACTO::"):
                     _, contacto_borrar = data.split("::")
                     usuario_id = obtener_usuario_id(usuario)
@@ -139,6 +146,7 @@ def manejar_cliente(conn_cliente, addr):
                     conn.commit()
                     continue
 
+                # Mensaje normal
                 destino, mensaje = data.split("::", 1)
                 if not son_contactos(usuario, destino):
                     conn_cliente.send(f"[Error]::No puedes enviar mensajes a '{destino}' sin ser contactos.\n".encode())
@@ -149,7 +157,8 @@ def manejar_cliente(conn_cliente, addr):
                 conn.commit()
 
                 if destino in clientes:
-                    clientes[destino].send(f"{usuario} dice: {mensaje}\n".encode())
+                    linea = f"{usuario} dice: {mensaje}"
+                    clientes[destino].send(f"[Historial]::{usuario}|{linea}\n".encode())
             except Exception as e:
                 print(f"[x] {usuario} se desconectó: {e}")
                 break
@@ -159,6 +168,7 @@ def manejar_cliente(conn_cliente, addr):
         conn_cliente.close()
         print(f"[-] {usuario} desconectado")
 
+# Iniciar servidor
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("0.0.0.0", 8080))
 server.listen()

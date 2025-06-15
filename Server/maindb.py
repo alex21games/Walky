@@ -2,8 +2,8 @@ import sqlite3
 import os
 
 # Asegúrate de que exista la carpeta DataBase
-os.makedirs("DataBase", exist_ok=True)
-DB_FILE = "DataBase/chat_data.db"
+os.makedirs("Server/DataBase", exist_ok=True)
+DB_FILE = "Server/DataBase/chat_data.db"
 
 conn = sqlite3.connect(DB_FILE)
 cursor = conn.cursor()
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS contactos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     usuario_id INTEGER NOT NULL,
     contacto_nombre TEXT NOT NULL,
+    UNIQUE(usuario_id, contacto_nombre),
     FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
 )
 ''')

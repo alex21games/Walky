@@ -2,8 +2,6 @@ import socket
 import threading
 import customtkinter as ctk
 from tkinter import messagebox
-import os
-import json
 
 class ClienteChat:
     def __init__(self, master, nombre, contrasena, ip):
@@ -19,6 +17,7 @@ class ClienteChat:
 
         self.contactos = []
         self.contacto_destino = None
+        self.historiales = {}
 
         self.construir_interfaz()
         self.conectar()
@@ -27,7 +26,6 @@ class ClienteChat:
         frame_main = ctk.CTkFrame(self.master)
         frame_main.pack(expand=True, fill="both")
 
-        # Panel izquierdo (contactos)
         self.frame_izquierdo = ctk.CTkFrame(frame_main, width=300)
         self.frame_izquierdo.pack(side="left", fill="y")
 
@@ -43,7 +41,6 @@ class ClienteChat:
         ctk.CTkButton(frame_agregar, text="+", width=30, command=self.agregar_contacto).pack(side="left", padx=2)
         ctk.CTkButton(frame_agregar, text="Eliminar", width=30, command=self.eliminar_contacto).pack(side="left", padx=2)
 
-        # Panel derecho (chat)
         self.frame_derecho = ctk.CTkFrame(frame_main)
         self.frame_derecho.pack(side="left", expand=True, fill="both")
 
@@ -66,7 +63,6 @@ class ClienteChat:
         self.contacto_destino = nombre
         self.text_chat.configure(state="normal")
         self.text_chat.delete("1.0", "end")
-        self.cargar_historial(nombre)
         self.text_chat.configure(state="disabled")
         self.mostrar_en_chat(f"[Sistema] Hablando con {nombre}")
 
@@ -98,11 +94,7 @@ class ClienteChat:
         try:
             self.cliente.sendall(f"DEL_CONTACTO::{contacto}".encode())
             self.contactos.remove(contacto)
-            self.lista_contactos.destroy()
-            self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
-            self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
-            for contacto in self.contactos:
-                self.agregar_boton_contacto(contacto)
+            self.refrescar_contactos()
             self.mostrar_en_chat(f"Contacto '{contacto}' eliminado.")
             messagebox.showinfo("Eliminado", f"Contacto '{contacto}' eliminado.")
         except Exception as e:
@@ -155,12 +147,22 @@ class ClienteChat:
                             self.master.after(0, self.refrescar_contactos)
                             self.mostrar_en_chat(f"Has aceptado a {nuevo} como contacto.")
 
+                    elif mensaje.startswith("[Historial]::"):
+                        try:
+                            _, resto = mensaje.split("::", 1)
+                            contacto, linea = resto.split("|", 1)
+                            if contacto not in self.historiales:
+                                self.historiales[contacto] = []
+                            self.historiales[contacto].append(linea)
+                            if self.contacto_destino == contacto:
+                                self.master.after(0, lambda l=linea: self.mostrar_en_chat(l))
+                        except ValueError:
+                            print(f"[!] Error de formato en mensaje de historial: {mensaje}")
+
                     elif mensaje.startswith("[Error]::"):
                         _, error_msg = mensaje.split("::", 1)
                         self.master.after(0, lambda: messagebox.showerror("Error del servidor", error_msg))
 
-                    else:
-                        self.mostrar_en_chat(mensaje)
             except Exception as e:
                 print(f"Error en recibir_mensajes: {e}")
                 self.conectado = False
@@ -174,26 +176,25 @@ class ClienteChat:
         ventana.geometry("300x150")
 
         ctk.CTkLabel(ventana, text=f"{nombre} quiere agregarte.").pack(pady=10)
-    
+
         def aceptar():
             self.cliente.sendall(f"ACEPTAR::{nombre}\n".encode())
-            # self.contactos.append(nombre)  # <-- Quita esto
-            # self.refrescar_contactos()     # <-- Quita esto
             ventana.destroy()
 
         def rechazar():
-            # Aquí podrías implementar RECHAZAR::<nombre> si lo deseas
             ventana.destroy()
 
         ctk.CTkButton(ventana, text="Aceptar", command=aceptar).pack(pady=5)
         ctk.CTkButton(ventana, text="Rechazar", command=rechazar).pack(pady=5)
 
     def refrescar_contactos(self):
-        self.lista_contactos.destroy()
-        self.lista_contactos = ctk.CTkScrollableFrame(self.frame_izquierdo)
-        self.lista_contactos.pack(expand=True, fill="both", padx=5, pady=5)
-        for contacto in self.contactos:
+        # Elimina todos los widgets hijos del scrollable frame, pero sin destruirlo
+        for widget in self.lista_contactos.winfo_children():
+            widget.destroy()
+
+        for contacto in sorted(set(self.contactos)):
             self.agregar_boton_contacto(contacto)
+
 
     def enviar_mensaje(self):
         mensaje = self.entry_mensaje.get()
@@ -203,26 +204,26 @@ class ClienteChat:
         if not mensaje.strip():
             return
         self.cliente.sendall(f"{self.contacto_destino}::{mensaje}\n".encode())
+        self.historiales.setdefault(self.contacto_destino, []).append(f"Tú -> {self.contacto_destino}: {mensaje}")
         self.mostrar_en_chat(f"Tú -> {self.contacto_destino}: {mensaje}")
-        # self.guardar_en_historial(f"Tú -> {self.contacto_destino}: {mensaje}")
         self.entry_mensaje.delete(0, "end")
 
     def mostrar_en_chat(self, mensaje):
-        self.text_chat.configure(state="normal")
-        self.text_chat.insert("end", mensaje + "\n")
-        self.text_chat.configure(state="disabled")
-        self.text_chat.see("end")
+        if self.contacto_destino:
+            self.text_chat.configure(state="normal")
+            self.text_chat.delete("1.0", "end")
+            for linea in self.historiales.get(self.contacto_destino, []):
+                self.text_chat.insert("end", linea + "\n")
+            self.text_chat.configure(state="disabled")
+            self.text_chat.see("end")
 
     def cargar_historial(self, nombre):
-        archivo = f"historial_{self.nombre}_{nombre}.json"
-        if os.path.exists(archivo):
-            try:
-                with open(archivo, "r") as f:
-                    historial = json.load(f)
-                    for linea in historial:
-                        self.text_chat.insert("end", linea + "\n")
-            except Exception as e:
-                print(f"Error cargando historial: {e}")
+        self.text_chat.configure(state="normal")
+        self.text_chat.delete("1.0", "end")
+        for mensaje in self.historiales.get(nombre, []):
+            self.text_chat.insert("end", mensaje + "\n")
+        self.text_chat.configure(state="disabled")
+
 
 def registrar_usuario(usuario, contrasena):
     try:
