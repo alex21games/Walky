@@ -62,14 +62,14 @@ def manejar_cliente(conn_cliente, addr):
 
         # Enviar historial
         cursor.execute("""
-            SELECT emisor, receptor, mensaje FROM mensajes 
+            SELECT emisor, receptor, mensaje, timestamp FROM mensajes 
             WHERE receptor = ? OR emisor = ?
             ORDER BY timestamp ASC
         """, (usuario, usuario))
-        for emisor, receptor, mensaje in cursor.fetchall():
+        for emisor, receptor, mensaje, ts in cursor.fetchall():
             contacto = receptor if emisor == usuario else emisor
             if contacto != usuario:
-                linea = f"{emisor} dice: {mensaje}"
+                linea = f"{emisor} dice: {mensaje} @{ts}"
                 conn_cliente.send(f"[Historial]::{contacto}|{linea}\n".encode())
 
         # Contactos
@@ -145,6 +145,19 @@ def manejar_cliente(conn_cliente, addr):
                     cursor.execute("DELETE FROM contactos WHERE usuario_id = ? AND contacto_nombre = ?", (usuario_id, contacto_borrar))
                     conn.commit()
                     continue
+
+                elif data.startswith("GET_HISTORIAL::"):
+                    _, contacto = data.split("::", 1)
+                    cursor.execute("""
+                        SELECT emisor, receptor, mensaje, timestamp FROM mensajes
+                        WHERE (emisor = ? AND receptor = ?) OR (emisor = ? AND receptor = ?)
+                        ORDER BY timestamp ASC
+                    """, (usuario, contacto, contacto, usuario))
+                    for emisor, receptor, mensaje, ts in cursor.fetchall():
+                        linea = f"{emisor} dice: {mensaje} @{ts}"
+                        conn_cliente.send(f"[Historial]::{contacto}|{linea}\n".encode())
+                    continue
+
 
                 # Mensaje normal
                 destino, mensaje = data.split("::", 1)

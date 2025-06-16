@@ -2,6 +2,7 @@ import socket
 import threading
 import customtkinter as ctk
 from tkinter import messagebox
+from datetime import datetime
 
 class ClienteChat:
     def __init__(self, master, nombre, contrasena, ip):
@@ -18,6 +19,7 @@ class ClienteChat:
         self.contactos = []
         self.contacto_destino = None
         self.historiales = {}
+        self.mensajes_mostrados = {}
 
         self.construir_interfaz()
         self.conectar()
@@ -44,8 +46,8 @@ class ClienteChat:
         self.frame_derecho = ctk.CTkFrame(frame_main)
         self.frame_derecho.pack(side="left", expand=True, fill="both")
 
-        self.text_chat = ctk.CTkTextbox(self.frame_derecho, state="disabled")
-        self.text_chat.pack(expand=True, fill="both")
+        self.frame_mensajes = ctk.CTkScrollableFrame(self.frame_derecho)
+        self.frame_mensajes.pack(expand=True, fill="both")
 
         frame_inferior = ctk.CTkFrame(self.frame_derecho)
         frame_inferior.pack(pady=10)
@@ -60,11 +62,52 @@ class ClienteChat:
         btn.pack(pady=2, padx=5)
 
     def seleccionar_contacto(self, nombre):
+        if self.contacto_destino == nombre:
+            return
         self.contacto_destino = nombre
-        self.text_chat.configure(state="normal")
-        self.text_chat.delete("1.0", "end")
-        self.text_chat.configure(state="disabled")
-        self.mostrar_en_chat(f"[Sistema] Hablando con {nombre}")
+        self.refrescar_mensajes_del_contacto()
+        self.cliente.sendall(f"GET_HISTORIAL::{nombre}\n".encode())
+
+    def refrescar_mensajes_del_contacto(self):
+        if self.contacto_destino:
+            for widget in self.frame_mensajes.winfo_children():
+                widget.destroy()
+
+            for linea in self.historiales.get(self.contacto_destino, []):
+                if " dice: " in linea and "@" in linea:
+                    contenido, ts = linea.rsplit("@", 1)
+                    emisor, texto = contenido.split(" dice: ", 1)
+                    self.agregar_burbuja_mensaje(texto.strip(), emisor.strip(), ts.strip())
+                elif "->" in linea:
+                    if "@" in linea:
+                        texto, ts = linea.split("@", 1)
+                        self.agregar_burbuja_mensaje(texto.split(": ", 1)[1].strip(), self.nombre, ts.strip())
+                    else:
+                        self.agregar_burbuja_mensaje(linea.split(": ", 1)[1].strip(), self.nombre)
+
+            self.frame_mensajes.update_idletasks()
+            self.frame_mensajes._parent_canvas.yview_moveto(1.0)
+
+
+    def mostrar_mensaje_individual(self, mensaje):
+        if not self.contacto_destino:
+            return
+
+        # Detecta y separa el timestamp si existe
+        timestamp = ""
+        if "@" in mensaje:
+            contenido, timestamp = mensaje.rsplit("@", 1)
+            mensaje = contenido.strip()
+            timestamp = timestamp.strip()
+
+        if "dice: " in mensaje:
+            emisor, texto = mensaje.split(" dice: ", 1)
+            self.agregar_burbuja_mensaje(texto.strip(), emisor.strip(), timestamp)
+        elif "->" in mensaje:
+            self.agregar_burbuja_mensaje(mensaje.split(": ", 1)[1].strip(), self.nombre, timestamp)
+
+        self.frame_mensajes.update_idletasks()
+        self.frame_mensajes._parent_canvas.yview_moveto(1.0)
 
     def agregar_contacto(self):
         nuevo = self.entry_nuevo_contacto.get().strip()
@@ -74,7 +117,6 @@ class ClienteChat:
         if nuevo in self.contactos:
             messagebox.showinfo("Ya existe", f"El contacto '{nuevo}' ya está en la lista.")
             return
-
         try:
             self.cliente.sendall(f"ADD_CONTACTO::{nuevo}\n".encode())
             self.entry_nuevo_contacto.delete(0, "end")
@@ -90,7 +132,6 @@ class ClienteChat:
         if contacto not in self.contactos:
             messagebox.showinfo("No existe", f"El contacto '{contacto}' no está en la lista.")
             return
-
         try:
             self.cliente.sendall(f"DEL_CONTACTO::{contacto}".encode())
             self.contactos.remove(contacto)
@@ -145,7 +186,8 @@ class ClienteChat:
                         if nuevo not in self.contactos:
                             self.contactos.append(nuevo)
                             self.master.after(0, self.refrescar_contactos)
-                            self.mostrar_en_chat(f"Has aceptado a {nuevo} como contacto.")
+                            self.historiales.setdefault(nuevo, [])
+                            self.master.after(0, lambda: self.mostrar_mensaje_individual(f"Has aceptado a {nuevo} como contacto."))
 
                     elif mensaje.startswith("[Historial]::"):
                         try:
@@ -153,11 +195,18 @@ class ClienteChat:
                             contacto, linea = resto.split("|", 1)
                             if contacto not in self.historiales:
                                 self.historiales[contacto] = []
+
+        
+                            if linea in self.historiales[contacto]:
+                                continue 
+
                             self.historiales[contacto].append(linea)
                             if self.contacto_destino == contacto:
-                                self.master.after(0, lambda l=linea: self.mostrar_en_chat(l))
+                                self.master.after(0, lambda l=linea: self.mostrar_mensaje_individual(l))
+                        
                         except ValueError:
-                            print(f"[!] Error de formato en mensaje de historial: {mensaje}")
+                            print(f"Error al procesar mensaje de historial: {mensaje}")
+
 
                     elif mensaje.startswith("[Error]::"):
                         _, error_msg = mensaje.split("::", 1)
@@ -166,8 +215,73 @@ class ClienteChat:
             except Exception as e:
                 print(f"Error en recibir_mensajes: {e}")
                 self.conectado = False
-                self.mostrar_en_chat("Desconectado del servidor.")
+                self.mostrar_mensaje_individual("Desconectado del servidor.")
                 break
+
+    def agregar_burbuja_mensaje(self, texto, emisor, timestamp=""):
+        miMsg = emisor == self.nombre
+        color_fondo = "#2e8b57" if miMsg else "#444444"
+        just = "e" if miMsg else "w"
+
+        frame = ctk.CTkFrame(self.frame_mensajes, fg_color="transparent")
+        frame.pack(anchor=just, pady=3, padx=10, fill="x")
+
+
+        ctk.CTkLabel(
+            frame,
+            text=emisor,
+            text_color="#aaaaaa",
+            font=("Arial", 10),
+            anchor=just
+        ).pack(anchor=just)
+
+        ctk.CTkLabel(
+            frame,
+            text=texto,
+            wraplength=500,
+            justify="left",
+            font=("Arial", 14),
+            fg_color=color_fondo,
+            corner_radius=12,
+            padx=10,
+            pady=5,
+            anchor=just
+        ).pack(anchor=just)
+
+        if timestamp:
+            ctk.CTkLabel(
+                frame,
+                text=timestamp,
+                text_color="#bbbbbb",
+                font=("Arial", 9, "italic"),
+                anchor=just
+            ).pack(anchor=just, pady=(0, 2))
+
+    def mostrar_en_chat(self, mensaje=None):
+        if not self.contacto_destino:
+            return
+
+    
+        if self.contacto_destino not in self.mensajes_mostrados:
+            for widget in self.frame_mensajes.winfo_children():
+                widget.destroy()
+            self.mensajes_mostrados[self.contacto_destino] = 0
+
+        historial = self.historiales.get(self.contacto_destino, [])
+        ya_mostrados = self.mensajes_mostrados.get(self.contacto_destino, 0)
+
+        nuevos = historial[ya_mostrados:]  # solo los nuevos
+        for linea in nuevos:
+            if "dice: " in linea:
+                emisor, texto = linea.split(" dice: ", 1)
+                self.agregar_burbuja_mensaje(texto, emisor)
+            elif "->" in linea:
+                self.agregar_burbuja_mensaje(linea.split(": ", 1)[1], self.nombre)
+
+        self.mensajes_mostrados[self.contacto_destino] = len(historial)
+
+        self.frame_mensajes.update_idletasks()
+        self.frame_mensajes._parent_canvas.yview_moveto(1.0)
 
 
     def mostrar_solicitud(self, nombre):
@@ -188,13 +302,10 @@ class ClienteChat:
         ctk.CTkButton(ventana, text="Rechazar", command=rechazar).pack(pady=5)
 
     def refrescar_contactos(self):
-        # Elimina todos los widgets hijos del scrollable frame, pero sin destruirlo
         for widget in self.lista_contactos.winfo_children():
             widget.destroy()
-
         for contacto in sorted(set(self.contactos)):
             self.agregar_boton_contacto(contacto)
-
 
     def enviar_mensaje(self):
         mensaje = self.entry_mensaje.get()
@@ -203,19 +314,15 @@ class ClienteChat:
             return
         if not mensaje.strip():
             return
+
         self.cliente.sendall(f"{self.contacto_destino}::{mensaje}\n".encode())
-        self.historiales.setdefault(self.contacto_destino, []).append(f"Tú -> {self.contacto_destino}: {mensaje}")
-        self.mostrar_en_chat(f"Tú -> {self.contacto_destino}: {mensaje}")
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formateado = f"Tú -> {self.contacto_destino}: {mensaje} @{timestamp}"
+        self.historiales.setdefault(self.contacto_destino, []).append(formateado)
+        self.mostrar_mensaje_individual(formateado)
         self.entry_mensaje.delete(0, "end")
 
-    def mostrar_en_chat(self, mensaje):
-        if self.contacto_destino:
-            self.text_chat.configure(state="normal")
-            self.text_chat.delete("1.0", "end")
-            for linea in self.historiales.get(self.contacto_destino, []):
-                self.text_chat.insert("end", linea + "\n")
-            self.text_chat.configure(state="disabled")
-            self.text_chat.see("end")
 
     def cargar_historial(self, nombre):
         self.text_chat.configure(state="normal")
