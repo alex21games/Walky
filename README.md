@@ -38,3 +38,17 @@ Si decides ejecutarlo en crudo simplemente escribe en la ruta antes mencionada:
 Pero si quieres que el programa este siempre disponible en ejecutable sin necesidad de todas las librerias, en la misma direccion ejecuta:
 ``` pyinstaller --onefile main.py ```
 Esto te dejara una version compilada del programa en la carpeta /Dist/ que se genero en el mismo directorio de /Client/, es completamente portable y movible sin problemas o complicaciones, puedes renombrarlo o si te apetece agregarle un logo ya que por defecto no contamos con un logo.
+
+Con esos pasos el programa estaria listo para usarse!
+
+El programa es muy sencillo de usar por lo que un manual no es requerido, pero si las funciones que este implementa:
+
+Login o registro: Este apartado es el primero en aparecer cada vez que abres el programa, tienes dos opciones, loguearte con una cuenta ya existente o crear una nueva, no hay limite de creacion pero es recomendable usar dos como maximo. La primera casilla es para el nombre, la segunda es para la contraseña, y como recuerdo tienes dos opciones, loguearte o registrarte, si te registras tendras que darle luego al boton de loguearte.
+
+Direccion ip: Esta opcion le permite al usuario elegir a que servidor conectarse, dependiendo de a cual se conecte puede que este registrado o no, tenga contactos o chats registrados o si siquiera tenga permitido entrar! como recomendacion, solo pon localhost si tu empresa corre unicamente un servidor, si te dice lo contrario escribe la ip proporcionada.
+
+Chat principal: Al pasar las otras pantallas se te presenta la app como tal, tienes los contactos en forma de lista, un boton de "+" para añadir uno nuevo, y elminiar para eliminar un contacto que ya no deseas que te lleguen sus mensajes, tambien la casilla de texto, donde aparece texto en burbujas para cada uno y ademas la caja de texto para mandar un mensaje.
+
+
+
+El programa le pertenece a Secure. Inc. No lo modifique maliciosamente ni se lucre de el, no esta permitido.
