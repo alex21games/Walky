@@ -1,3 +1,40 @@
 # Walky - Un chat ligero y seguro para tu compañia
 
-Se agregaran cosas al README despues
+## Que es Walky?
+
+Walky es un chat hecho en python con el proposito de ser veloz, simple y ser seguro para toda la gente que lo use,
+es por eso que la aplicacion esta destinada a usarse en un servidor LAN, y cuenta con un archivo de servidor y setup de base de datos ya pre hecho para funcionar correctamente con el cliente.
+
+Con sistema de aceptar o rechazar solicitudes de manera comoda, para que sepas quien te manda mensajes, timestamps y un acabado hermoso para el apartado grafico.
+
+## Como usarlo o instalarlo?
+
+El setup de walky es muy sencillo, solo requiere un par de prerequisitos:
+
++ El codigo fuente disponible en el repositorio.
++ La version mas reciente de python con las siguientes librerias extras: customtkinter, socket, threading, sqlite3. LA LISTA CONTINUARA EN UN FUTURO PARA SETUPS PERSONALIZADOS
++ Pyinstaller para compilar el proyecto
++ Y MUCHAS ganas de hacerlo
+
+Cabe recalcar que tambien existen las versiones precompiladas del proyecto, pero el setup del servidor se tiene que seguir haciendo manualmente.
+
+Entonces, una vez aclarado eso pasemos al setup:
+
+Al extraer el codigo este te deja dos carpetas principales: Client y Server, en una terminal accede a la direccion de la carpeta Server y ejecuta:
+´´´ py maindb.py ´´´
+Este debe marcar un mensaje: "Base de datos inicializada correctamente"
+Si eso es asi, vamos bien. Es importante saber que si la carpeta generada "DataBase" se genera a fuera de la carpeta Server, debes meterla dentro de esta misma para que quede: Server/Database/chat_data.db
+
+Ahora, en la misma direccion /Server/ ejecuta el siguiente comando:
+´´´ py client_handler.py ´´´
+Esto deberia dejarte con un mensaje exitoso tipo: "Servidor corriendo en puerto 8080", si no quieres usar localhost como ruta predeterminaada, en windows ve a tu terminal y escribe 
+´´´ ipconfig ´´´
+Copia tu direccion ipv4 y al final añadele ":8080" quedaria como: 192.x.xxx.xxx:8080, pero si no tienes problemas usando la palabra clave localhost puedes seguir.
+
+Ahora, en una terminal accede a la ruta de /Client/ en la cual puedes hacer dos cosas: empaquetarlo o ejecutarlo en crudo.
+Si decides ejecutarlo en crudo simplemente escribe en la ruta antes mencionada:
+´´´ py main.py ´´´
+
+Pero si quieres que el programa este siempre disponible en ejecutable sin necesidad de todas las librerias, en la misma direccion ejecuta:
+´´´ pyinstaller --onefile main.py ´´´
+Esto te dejara una version compilada del programa en la carpeta /Dist/ que se genero en el mismo directorio de /Client/, es completamente portable y movible sin problemas o complicaciones, puedes renombrarlo o si te apetece agregarle un logo ya que por defecto no contamos con un logo.
