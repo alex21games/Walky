@@ -21,20 +21,20 @@ Cabe recalcar que tambien existen las versiones precompiladas del proyecto, pero
 Entonces, una vez aclarado eso pasemos al setup:
 
 Al extraer el codigo este te deja dos carpetas principales: Client y Server, en una terminal accede a la direccion de la carpeta Server y ejecuta:
-´´´ py maindb.py ´´´
+``` py maindb.py ```
 Este debe marcar un mensaje: "Base de datos inicializada correctamente"
 Si eso es asi, vamos bien. Es importante saber que si la carpeta generada "DataBase" se genera a fuera de la carpeta Server, debes meterla dentro de esta misma para que quede: Server/Database/chat_data.db
 
 Ahora, en la misma direccion /Server/ ejecuta el siguiente comando:
-´´´ py client_handler.py ´´´
+``` py client_handler.py ```
 Esto deberia dejarte con un mensaje exitoso tipo: "Servidor corriendo en puerto 8080", si no quieres usar localhost como ruta predeterminaada, en windows ve a tu terminal y escribe 
-´´´ ipconfig ´´´
+``` ipconfig ```
 Copia tu direccion ipv4 y al final añadele ":8080" quedaria como: 192.x.xxx.xxx:8080, pero si no tienes problemas usando la palabra clave localhost puedes seguir.
 
 Ahora, en una terminal accede a la ruta de /Client/ en la cual puedes hacer dos cosas: empaquetarlo o ejecutarlo en crudo.
 Si decides ejecutarlo en crudo simplemente escribe en la ruta antes mencionada:
-´´´ py main.py ´´´
+``` py main.py ```
 
 Pero si quieres que el programa este siempre disponible en ejecutable sin necesidad de todas las librerias, en la misma direccion ejecuta:
-´´´ pyinstaller --onefile main.py ´´´
+``` pyinstaller --onefile main.py ```
 Esto te dejara una version compilada del programa en la carpeta /Dist/ que se genero en el mismo directorio de /Client/, es completamente portable y movible sin problemas o complicaciones, puedes renombrarlo o si te apetece agregarle un logo ya que por defecto no contamos con un logo.
